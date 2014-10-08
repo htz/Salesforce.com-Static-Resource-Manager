@@ -1,0 +1,204 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    "use strict";
+
+    var paginationModule = angular.module('ngPagination', []);
+
+    /**
+     * usage
+     *
+     * - main module
+     *
+     * var app = angular.module('app', [
+     *     'ngPagination'
+     * ]);
+     *
+     *
+     * - controller
+     *
+     * @recipe     ng-resource object
+     * @Pagination Pagination object
+     *
+     * app.controller('exampleCtrl'. function($scope, recipe, Pagination) {
+     *     $scope.pagination = Pagination.getNew(10, 6); // (parPage, modules)
+     *     $scope.lists = recipe.query(function() {
+     *         $scope.pagination.numPages = Math.ceil($scope.lists.length / $scope.pagination.perPage);
+     *     });
+     * });
+     *
+     *
+     * - view (template)
+     *
+     * - pagination element
+     *
+     * <ul>
+     *     <li><a href="" ng-click="pagination.firstPage()" ng-hide="pagination.isFirstPage()">««</a></li>
+     *     <li><a href="" ng-click="pagination.prevPage()" ng-hide="pagination.isFirstPage()">«</a></li>
+     *     <li><a href="" ng-show="pagination.beforeEllipsis">...</a></li>
+     *     <li ng-repeat="n in [] | range: pagination" ng-class="{active: n == pagination.page}"><a href="" ng-click="pagination.toPageId(n)">{{n + 1}}</a></li>
+     *     <li><a href="" ng-show="pagination.afterEllipsis">...</a></li>
+     *     <li><a href="" ng-click="pagination.nextPage()" ng-hide="pagination.isLastPage()">»</a></li>
+     *     <li><a href="" ng-click="pagination.lastPage()" ng-hide="pagination.isLastPage()">»»</a></li>
+     * </ul>
+     *
+     * - angular repeater
+     *
+     * <ANY
+     *     ng-repeat="data in lists | startFrom: pagination.startFrom() | limitTo: pagination.perPage"
+     * >
+     * ...
+     * </ANY>
+     *
+     */
+    paginationModule.factory('$pagination', function() {
+
+        var pagination = {};
+
+        pagination.getNew = function(perPage, modules) {
+
+            perPage = perPage === undefined ? 20 : perPage;
+            modules = modules === undefined ? 10 : modules;
+
+            var paginator = {
+                numPages: 1,
+                perPage: perPage,
+                page: 0,
+                modules: modules,
+                beforeEllipsis: false,
+                afterEllipsis: false
+            };
+
+            paginator.prevPage = function() {
+                if (paginator.page > 0) {
+                    paginator.page -= 1;
+                }
+            };
+
+            paginator.nextPage = function() {
+                if (paginator.page < paginator.numPages - 1) {
+                    paginator.page += 1;
+                }
+            };
+
+            paginator.isFirstPage = function() {
+                return paginator.page == 0;
+            };
+
+            paginator.firstPage = function() {
+                if (paginator.page > 0) {
+                    paginator.page = 0;
+                }
+            };
+
+            paginator.isLastPage = function() {
+                return paginator.page == paginator.numPages - 1;
+            };
+
+            paginator.lastPage = function() {
+                if (paginator.page < paginator.numPages - 1) {
+                    paginator.page = paginator.numPages - 1;
+                }
+            };
+
+            paginator.startFrom = function() {
+                return paginator.page * paginator.perPage;
+            };
+
+            paginator.toPageId = function(id) {
+                if (id >= 0 && id <= paginator.numPages - 1) {
+                    paginator.page = id;
+                }
+            };
+
+            return paginator;
+        };
+
+        return pagination;
+    });
+
+    paginationModule.filter('startFrom', function() {
+        return function(input, start) {
+            if (input === undefined) {
+                return input;
+            } else {
+                return input.slice(+start);
+            }
+        };
+    });
+
+    /**
+     * @input      ng-repeat elements
+     * @pagination pagination object
+     */
+    paginationModule.filter('range', function() {
+        return function(input, pagination) {
+
+            var pageCount = pagination.numPages,
+                page = pagination.page,
+                modules = pagination.modules
+            ;
+
+            pageCount = parseInt(pageCount);
+
+            if (modules && pageCount > modules) {
+
+                page += 1;
+
+                if (Math.ceil(modules / 2) + 1 < page) {
+                    pagination.beforeEllipsis = true;
+                } else {
+                    pagination.beforeEllipsis = false;
+                }
+
+                if (pageCount - Math.floor(modules / 2) - 1 < page) {
+                    pagination.afterEllipsis = false;
+                } else {
+                    pagination.afterEllipsis = true;
+                }
+
+                var half = parseInt(modules / 2, 10);
+                var end = page + half;
+
+                if (end > pageCount) {
+                    end = pageCount;
+                }
+
+                var start = page - (modules - (end - page));
+                if (start <= 1) {
+                    start = 1;
+                    end = page + (modules - page) + 1;
+                }
+
+                for (var i = start; i < page; i++) {
+                    input.push(i - 1);
+                }
+
+                input.push(page - 1);
+
+                start = page + 1;
+                for (var i = start; i < end; i++) {
+                    input.push(i - 1);
+                }
+
+                if (end != page) {
+                    input.push(i - 1);
+                }
+
+            } else {
+
+                pagination.beforeEllipsis = false;
+                pagination.afterEllipsis = false;
+
+                for (var i = 0; i < pageCount; i++) {
+                    input.push(i);
+                }
+
+            }
+
+            return input;
+        };
+    });
+})();
+</script>
+</apex:page>

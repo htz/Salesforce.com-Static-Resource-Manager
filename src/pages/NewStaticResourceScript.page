@@ -1,0 +1,171 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    srmApp.controller("NewStaticResource", ["$scope", "$element",  function($scope, $element) {
+        // init data
+        var uniqId = 0;
+        $scope.draggingItemNum = 0;
+        $scope.items = [];
+        $scope.isProcessing = false;
+        $scope.allCacheControl = "Private";
+    
+        // init drag
+        var $droparea = $element.find(".droparea");
+    
+        // drag events
+        $droparea
+        .bind("drop", function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            $(this).removeClass('dragging');
+            // add row function
+            var addRow = function(file, img) {
+                $scope.$apply(function() {
+                    $scope.items.push({
+                        id: uniqId++,
+                        file: file,
+                        img: img,
+                        name: file.name.replace(/\W+/g, "_"),
+                        cacheControl: $scope.allCacheControl,
+                        description: ""
+                    });
+                });
+            };
+            // add file
+            var files = e.originalEvent.dataTransfer.files;
+            for (var i = 0; i < files.length; i++) {
+                if (files[i] instanceof File && files[i].type !== "") {
+                    (function(file) {
+                        if (file.type.match(/image\/.*/)) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                addRow(file, e.target.result);
+                            };
+                            reader.readAsDataURL(file);
+                        } else {
+                            addRow(file);
+                        }
+                    })(files[i]);
+                }
+            }
+            $scope.$apply(function() {
+                $scope.draggingItemNum = 0;
+            });
+        })
+        .bind("dragenter dragover", function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            $(this).addClass('dragging');
+            var items = e.originalEvent.dataTransfer.items;
+            var count = 0;
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                if (item.kind === 'file' && item.type !== "") {
+                    count++;
+                }
+            }
+            $scope.$apply(function() {
+                $scope.draggingItemNum = count;
+            });
+        })
+        .bind("dragleave", function(e) {
+            e.preventDefault();
+            $(this).removeClass('dragging');
+            $scope.$apply(function() {
+                $scope.draggingItemNum = 0;
+            });
+        });
+    
+        // cancel by id
+        var cancelById = function(id) {
+            for (var i = 0; i < $scope.items.length; i++) {
+                if ($scope.items[i].id === id) {
+                    $scope.$apply(function() {
+                        $scope.items.splice(i, 1);
+                    });
+                    return true;
+                }
+            }
+            return false;
+        };
+    
+        // save all
+        var save = function(item) {
+            var d = new $.Deferred();
+            var reader = new FileReader();
+            var file = item.file;
+            reader.onloadend = function(evt) {
+                if (evt.target.readyState == FileReader.DONE) {
+                    var data = reader.result;
+                    var staticResource = {
+                        fullName: item.name,
+                        content: btoa(data),
+                        cacheControl: item.cacheControl,
+                        contentType: file.type,
+                        description: item.description
+                    };
+    
+                    MetadataApi.createStaticResource([staticResource])
+                    .done(function(res) {
+                        d.resolve(res);
+                    })
+                    .fail(function(err) {
+                        d.reject(err);
+                    })
+                    .progress(function(e) {
+                        d.notify(e);
+                    });
+                }
+            };
+            reader. readAsBinaryString(file);
+            return d.promise();
+        };
+        $scope.saveAll = function() {
+            $scope.items.forEach(function(item) {
+                $scope.save(item);
+            });
+        };
+        $scope.save = function(item) {
+            $scope.isProcessing++;
+            item.inprogress = 0;
+            return save(item)
+            .done(function(res) {
+                if (res[0].success === "true") {
+                    cancelById(item.id);
+                } else {
+                    $scope.$apply(function() {
+                        item.error = res[0].errors.message;
+                    });
+                }
+            })
+            .fail(function(err) {
+                alert(err);
+            })
+            .always(function() {
+                $scope.$apply(function() {
+                    $scope.isProcessing--;
+                    item.inprogress = 0;
+                });
+            })
+            .progress(function(e) {
+                $scope.$apply(function() {
+                    item.inprogress = e.loaded / e.total * 100;
+                });
+            });
+        };
+    
+        // toggle cache control
+        $scope.toggleCacheControl = function() {
+            if ($scope.allCacheControl === "Private") {
+                $scope.allCacheControl = "Public";
+            } else {
+                $scope.allCacheControl = "Private";
+            }
+            $scope.items.forEach(function(item) {
+                item.cacheControl = $scope.allCacheControl;
+            });
+        };
+    }]);
+})();
+</script>
+</apex:page>

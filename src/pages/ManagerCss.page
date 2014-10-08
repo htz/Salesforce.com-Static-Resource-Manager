@@ -1,0 +1,44 @@
+<apex:page showHeader="false">
+<style>[ng-cloak] { display: none; }</style>
+<style>
+#app .tab-pane {
+    padding: 4px;
+}
+#app .thumbnail {
+    margin-bottom: 0;
+    max-height: 40px;
+    max-width: 40px;
+}
+
+#app #upload .droparea {
+    border: 3px dashed #aaa;
+    border-radius: 8px;
+    color: #aaa;
+    margin-bottom: 8px;
+    text-align: center;
+}
+#app #upload .droparea.dragging {
+    border: 3px dashed #ff0000;
+    color: #ff0000;
+}
+#app #upload .droparea p {
+    line-height: 90px;
+    margin: 0;
+    font-size: 3em;
+}
+#app #upload #new-static-resources .error {
+    color: #ff0000;
+}
+#app #upload #new-static-resources tfoot th {
+    text-align: right;
+}
+
+#app #view .droparea.dragging {
+    border: 3px dashed #ff0000;
+    background-color: yellow;
+}
+#app .action a {
+    cursor: pointer;
+}
+</style>
+</apex:page>

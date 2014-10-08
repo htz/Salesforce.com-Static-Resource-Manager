@@ -1,0 +1,79 @@
+<apex:page >
+<script>
+(function() {
+    angular.module("ngTreeGrid", [])
+    .directive('grid', function() {
+        return {
+            priority: 1200,
+            restrict: 'E',
+            compile: function(tElm, tAttrs) {
+                tAttrs.columns = tElm.find('column');
+                tElm.empty();
+            },
+            controller: function($attrs) {
+                this.columns = $attrs.columns;
+            }
+        };
+    })
+    .directive('grid', function() {
+        return {
+            priority: 1100,
+            restrict: 'E',
+            replace: true,
+            scope:{
+                items: "="
+            },
+            template: function() {
+                return '<table class="table table-hover tree">' +
+                    '<thead title-transclude></thead>' +
+                    '<tbody>' +
+                        '<tr ng-repeat="item in items" class="treegrid-{{item[\'$tid\']}}{{item[\'$parentId\'] ? \' treegrid-parent-\' + item[\'$parentId\'] : \'\'}}" row-transclude></tr>' +
+                    '</tbody>' +
+                '</table>';
+            }
+        };
+    })
+    .directive('titleTransclude', function($compile) {
+        return {
+            require: '^grid',
+            link: function(scope, elm, attr, grid) {
+                var clones = [];
+                angular.forEach(grid.columns, function(col) {
+                    var th = document.createElement('th');
+                    th.innerHTML = col.title;
+                    clones.push(th);
+                });
+                elm.append(clones);
+                $compile(clones)(scope);
+            }
+        };
+    })
+    .directive('rowTransclude', function($compile) {
+        return {
+            require: '^grid',
+            link: function(scope, element, attr, grid) {
+                var clones = [];
+                angular.forEach(grid.columns, function(col) {
+                    var td = document.createElement('td');
+                    td.innerHTML = col.innerHTML;
+                    clones.push(td);
+                });
+                element.append(clones);
+                $compile(clones)(scope);
+                if (scope.$last) {
+                    setTimeout(function() {
+                        var $tree = element.parents('.tree');
+                        $tree.treegrid({
+                            expanderExpandedClass: 'glyphicon glyphicon-minus',
+                            expanderCollapsedClass: 'glyphicon glyphicon-plus'
+                        });
+                        $tree.find("tr").treegrid("collapse");
+                    }, 10);
+                }
+            }
+        };
+    });
+
+})();
+</script>
+</apex:page>

@@ -1,0 +1,19 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    angular.module("ngBootstrapUtils", [])
+    .directive("bootstrapTooltip", function () {
+        return {
+            restrict: 'A',
+            link: function ($scope, $element, $attr) {
+                var value = $attr.bootstrapTooltip;
+                $element.tooltip({
+                    title: value,
+                    placement: 'bottom'
+                });
+            }
+        };
+    });
+})();
+</script>
+</apex:page>

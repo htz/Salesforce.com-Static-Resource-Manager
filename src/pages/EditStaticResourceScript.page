@@ -1,0 +1,210 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    srmApp.controller("EditStaticResource", ["$scope", "$element", function($scope, $element) {
+        var StaticResource = new SObjectModel.StaticResource();
+        var StaticResourceFields = [
+            "Id", "bodyLength", "cacheControl", "contentType", "createdById", "createdDate", "description",
+            "lastModifiedById", "lastModifiedDate", "name", "namespacePrefix"
+        ];
+
+        // init drag
+        var $droparea = $element;
+
+        // drag events
+        $droparea
+        .bind("drop", function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            $(this).removeClass('dragging');
+            if (!$scope.record.editing) {
+                $scope.$apply(function() {
+                    $scope.$parent.edit($scope.record);
+                });
+            }
+            // update field function
+            var updateField = function(file, img) {
+                $scope.$apply(function() {
+                    $scope.record.newFile = file;
+                    $scope.record.newType = file.type;
+                    $scope.record.newSize = file.size;
+                    if (img) {
+                        $scope.record.newImg = img;
+                    } else {
+                        $scope.record.newImg = null;
+                    }
+                });
+            };
+            // update field
+            var files = e.originalEvent.dataTransfer.files;
+            for (var i = 0; i < files.length; i++) {
+                if (files[i] instanceof File && files[i].type !== "") {
+                    (function(file) {
+                        if (file.type.match(/image\/.*/)) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                updateField(file, e.target.result);
+                            };
+                            reader.readAsDataURL(file);
+                        } else {
+                            updateField(file);
+                        }
+                    })(files[i]);
+                    break;
+                }
+            }
+        })
+        .bind("dragenter dragover", function(e) {
+            e.stopPropagation();
+            e.preventDefault();
+            $(this).addClass('dragging');
+        })
+        .bind("dragleave", function(e) {
+            e.preventDefault();
+            $(this).removeClass('dragging');
+        });
+
+        $scope.update = function() {
+            update()
+            .done(function(res) {
+                $scope.$apply(function() {
+                    $scope.record.editing = false;
+                });
+            })
+            .fail(function(err) {
+                $scope.$apply(function() {
+                    $scope.record.error = err;
+                });
+            });
+        };
+
+        var update = function() {
+            var d = new $.Deferred();
+            var record = $scope.record;
+            var file = record.newFile;
+
+            // check change
+            if (!file &&
+                record.name === record.newName &&
+                record.cacheControl === record.newCacheControl &&
+                record.description === record.newDescription) {
+                record.inprogress = null;
+                setTimeout(d.resolve, 0);
+                return d.promise();
+            }
+
+            var onSuccess = function(res) {
+                record.name = record.newName;
+                if (record.namespacePrefix) {
+                    record.fullName = record.namespacePrefix + "__" + record.name;
+                } else {
+                    record.fullName = record.name;
+                }
+                record.url = "/resource/1311880464000/" + record.fullName;
+                record.record.description = record.newDescription;
+                record.record.cacheControl = record.newCacheControl;
+                if (file) {
+                    record.record.bodyLength = record.newSize;
+                    record.record.contentType = file.type;
+                }
+                $scope.$apply(function() {
+                    record.description = record.newDescription;
+                    record.cacheControl = record.newCacheControl;
+                    record.inprogress = null;
+                    if (file){
+                        record.bodyLength = record.newSize;
+                        record.contentType = file.type;
+                        record.unzip = null;
+                    }
+                    record.lastModifiedDate = new Date();
+                });
+                d.resolve(record);
+            };
+
+            var onFailure = function(err) {
+                $scope.$apply(function() {
+                    record.inprogress = null;
+                });
+                d.reject(err);
+            };
+
+            if (file) {
+                var updateFile = function() {
+                    var reader = new FileReader();
+                    reader.onloadend = function(evt) {
+                        if (evt.target.readyState == FileReader.DONE) {
+                            var data = reader.result;
+                            var staticResource = {
+                                fullName: record.fullName,
+                                content: btoa(data),
+                                cacheControl: record.newCacheControl,
+                                contentType: file.type,
+                                description: record.newDescription || ""
+                            };
+                            MetadataApi.updateStaticResource([staticResource])
+                            .done(function(res) {
+                                if (res[0].success === "true") {
+                                    onSuccess();
+                                } else {
+                                    onFailure(res[0].errors.message);
+                                }
+                            }).fail(onFailure)
+                            .progress(function(e) {
+                                $scope.$apply(function() {
+                                    record.inprogress = e.loaded / e.total * 100;
+                                });
+                            });
+                        }
+                    };
+                    reader.readAsBinaryString(file);
+                };
+    
+                if (record.name !== record.newName) {
+                    var staticResource = new sforce.SObject("StaticResource");
+                    staticResource.Id = record.Id;
+                    staticResource.Name = record.newName;
+                    record.inprogress = 0;
+                    sforce.connection.update([staticResource], {
+                        onSuccess: function(res) {
+                            if (res[0].success === "true") {
+                                record.name = record.newName;
+                                if (record.namespacePrefix) {
+                                    record.fullName = record.namespacePrefix + "__" + record.name;
+                                } else {
+                                    record.fullName = record.name;
+                                }
+                                updateFile();
+                            } else {
+                                onFailure(res[0].errors.message);
+                            }
+                       },
+                        onFailure: onFailure
+                    });
+                } else {
+                    updateFile();
+                }
+            } else {
+                var staticResource = new sforce.SObject("StaticResource");
+                staticResource.Id = record.Id;
+                staticResource.Name = record.newName;
+                staticResource.CacheControl = record.newCacheControl;
+                staticResource.Description= record.newDescription || "";
+                record.inprogress = 0;
+                sforce.connection.update([staticResource], {
+                    onSuccess:function(res) {
+                        if (res[0].success === "true") {
+                            onSuccess();
+                        } else {
+                            onFailure(res[0].errors.message);
+                        }
+                    },
+                    onFailure: onFailure
+                });
+            }
+            return d.promise();
+        };
+
+    }]);
+})();
+</script>
+</apex:page>

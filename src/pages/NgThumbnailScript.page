@@ -1,0 +1,20 @@
+<apex:page >
+<script>
+(function() {
+    angular.module("ngThumbnail", [])
+    .directive('thumbnail', function() {
+        return {
+            restrict: 'C',
+            link: function ($scope, $element, $attr) {
+                $element.on("load", function() {
+                    $element.siblings(".thumbnailsize").remove();
+                    $(this).imageSize(function (w, h) {
+                        $element.after('<span class="thumbnailsize">(' + w + ', ' + h + ')</span>');
+                    });
+                });
+            }
+        };
+    });
+})();
+</script>
+</apex:page>

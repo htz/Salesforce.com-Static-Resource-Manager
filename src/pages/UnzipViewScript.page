@@ -1,0 +1,85 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    srmApp.controller("UnzipView", ["$scope", "$element", function($scope, $element) {
+        $scope.init = function() {
+            var record = $scope.tab.record;
+            if (record.tree) return;
+
+            var splitDirectory = function(zip) {
+                var files = zip.files;
+                var root = {};
+               _.each(files, function(file, name) {
+                    var path = name.split(/\//);
+                    var fname = path.pop();
+                    var current = root;
+                    _.each(path, function(d) {
+                        if (!current[d]) {
+                            current[d] = {"$dir": true};
+                        }
+                        current = current[d];
+                    });
+                    if (!file.options.dir && fname.length > 0) {
+                        current[fname] = file;
+                        file.size = file.asBinary().length;
+                        file.url = "/resource/1311880464000/" + record.fullName + "/" + file.name;
+                        file.image = !!fname.match('\\.(gif|png|bmp|gif|jpg|jpeg)$');
+                        file.text = !!fname.match('\\.(css|html|js|json|less|txt|xml)$');
+                    }
+                });
+                return root;
+            };
+
+            var flattenDirectory = function(dir, res) {
+                if (_.isUndefined(res)) {
+                    res = [];
+                }
+                var parentId = res.length;
+                var id = res.length + 1;
+               _.each(dir, function(d, name) {
+                   if (name[0] === "$") return;
+
+                    d["$tid"] = id;
+                    d["$label"] = name;
+                    if (parentId > 0) {
+                        d["$parentId"] = parentId;
+                    }
+                    res.push(d);
+                    id++;
+
+                    if (d["$dir"]) {
+                        res = flattenDirectory(d, res);
+                        id = res.length + 1;
+                    }
+                });
+                return res;
+            };
+
+            MetadataApi.readStaticResource([record.fullName])
+            .done(function(res) {
+                if (res.length === 1) {
+                    var content = res[0].records.content;
+                    var zip = new JSZip(content, {base64: true});
+                    var unzipfile = splitDirectory(zip);
+                    var tree = flattenDirectory(unzipfile);
+                    $scope.$apply(function() {
+                        record.tree = tree;
+                    });
+                }
+            });
+        };
+
+        $scope.collapseAll = function() {
+            var $tree = $element.find('.tree');
+            $tree.find("tr").treegrid("collapse");
+        };
+
+        $scope.expandAll = function() {
+            var $tree = $element.find('.tree');
+            $tree.find("tr").treegrid("expand");
+        };
+
+    }]);
+})();
+</script>
+</apex:page>

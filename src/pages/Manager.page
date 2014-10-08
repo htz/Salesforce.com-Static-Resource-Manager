@@ -1,0 +1,313 @@
+<apex:page docType="html-5.0">
+    <apex:stylesheet value="{!URLFOR($Resource.libs, 'bootstrap/css/bootstrap.min.css')}"/>
+    <apex:stylesheet value="{!URLFOR($Resource.libs, 'jquery-treegrid/css/jquery.treegrid.css')}" />
+    <apex:composition template="ManagerCss" />
+
+    <apex:remoteObjects >
+        <apex:remoteObjectModel name="StaticResource">
+            <apex:remoteObjectField name="BodyLength" jsShorthand="bodyLength"/>
+            <apex:remoteObjectField name="CacheControl" jsShorthand="cacheControl"/>
+            <apex:remoteObjectField name="ContentType" jsShorthand="contentType"/>
+            <apex:remoteObjectField name="CreatedById" jsShorthand="createdById"/>
+            <apex:remoteObjectField name="CreatedDate" jsShorthand="createdDate"/>
+            <apex:remoteObjectField name="Description" jsShorthand="description"/>
+            <apex:remoteObjectField name="LastModifiedById" jsShorthand="lastModifiedById"/>
+            <apex:remoteObjectField name="LastModifiedDate" jsShorthand="lastModifiedDate"/>
+            <apex:remoteObjectField name="Name" jsShorthand="name"/>
+            <apex:remoteObjectField name="NamespacePrefix" jsShorthand="namespacePrefix"/>
+        </apex:remoteObjectModel>
+    </apex:remoteObjects>
+
+    <div id="app" ng-app="srmApp" ng-cloak="ng-cloak" ng-controller="Application">
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="active"><a href="#upload" role="tab" data-toggle="tab">Upload</a></li>
+            <li><a href="#view" role="tab" data-toggle="tab">View/Edit</a></li>
+            <li ng-repeat="tab in tabs">
+                <a ng-href="#{{tab.id}}" role="tab" data-toggle="tab" ng-if="tab.type == 'edit'"><i class="glyphicon glyphicon-eye-open" title="open"></i>{{tab.record.name}}<span ng-if="tab.isChanged"> *</span></a>
+                <a ng-href="#{{tab.id}}" role="tab" data-toggle="tab" ng-if="tab.type == 'unzip'"><i class="glyphicon glyphicon-compressed" title="unzip"></i>{{tab.record.name}}</a>
+            </li>
+        </ul>
+        
+        <!-- Tab panes -->
+        <div class="tab-content">
+            <div class="tab-pane active" id="upload" ng-controller="NewStaticResource">
+                <div class="droparea" ng-on="drop: drop">
+                    <p>Drop static resource files.<span ng-if="draggingItemNum > 0"> ({{draggingItemNum}} items.)</span></p>
+                </div>
+                <table class="table table-hover" id="new-static-resources" ng-show="items.length > 0">
+                    <thead>
+                        <tr>
+                            <th>Action</th>
+                            <th>Original Name</th>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>MIME Type</th>
+                            <th>Image</th>
+                            <th>Size</th>
+                            <th>Cache Control</th>
+                        </tr>
+                    </thead>
+                    <tfoot>
+                        <tr>
+                            <th colspan="8">
+                                <button class="btn btn-default" ng-click="toggleCacheControl()" ng-class="{disabled: isProcessing > 0}">Change All Cache Control</button>
+                                <button class="btn btn-danger" ng-click="items = []" ng-class="{disabled: isProcessing > 0}">Cancel All</button>
+                                <button class="btn btn-primary" ng-click="saveAll()" ng-class="{disabled: isProcessing > 0}">Save All</button>
+                            </th>
+                        </tr>
+                    </tfoot>
+                    <tbody>
+                        <tr ng-repeat-start="item in items">
+                            <td rowspan="{{ !item.error ? 1 : 2}}">
+                                <a href="#" ng-click="items.splice($index, 1)" ng-hide="isProcessing > 0"><i class="glyphicon glyphicon-remove"></i></a>
+                                <span ng-hide="isProcessing">&nbsp;|&nbsp;</span>
+                                <a href="#" ng-click="save(item)" ng-hide="isProcessing">Save</a>
+
+                                <div class="progress" ng-if="isProcessing">
+                                    <div class="progress-bar" role="progressbar" aria-valuenow="{{item.inprogress | number:0}}" aria-valuemin="0" aria-valuemax="100" style="width: {{item.inprogress}}%;">{{item.inprogress | number:1}}%</div>
+                                </div>
+                            </td>
+                            <td>{{item.file.name}}</td>
+                            <td><input type="text" ng-model="item.name" /></td>
+                            <td><textarea ng-model="item.description"></textarea></td>
+                            <td>{{item.file.type}}</td>
+                            <td><img class="thumbnail" ng-src="{{item.img}}" ng-alt="{{item.file.name}}" ng-if="!!item.img" /></td>
+                            <td>{{item.file.size / 1000 | number:1}} KB</td>
+                            <td>
+                                <select ng-model="item.cacheControl">
+                                    <option>Private</option>
+                                    <option>Public</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr ng-repeat-end="ng-repeat-end" ng-if="!!item.error">
+                            <td colspan="7" class="danger">{{item.error}}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="tab-pane" id="view" ng-controller="ViewStaticResource">
+                <form class="form-inline" role="form">
+                    <div class="form-group">
+                        <label class="sr-only" for="exampleInputEmail2">Name</label>
+                        <input type="text" class="form-control" placeholder="Name" ng-model="name" ng-keyup="refresh()" />
+                    </div>
+                    <div class="form-group">
+                        <label>Namespace Prefix:</label>
+                        <select class="form-control" ng-model="prefix" ng-change="refresh()" ng-options="p as p || '--All--' for p in prefixes"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Type:</label>
+                        <select class="form-control" ng-model="type" ng-change="refresh()">
+                            <option value="all">--All--</option>
+                            <option value="css">CSS</option>
+                            <option value="javascript">JavaScript</option>
+                            <option value="image">Image</option>
+                            <option value="text">Text</option>
+                            <option value="zip">Zip</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Cache Control:</label>
+                        <select class="form-control" ng-model="cacheControl" ng-change="refresh()">
+                            <option value="all">--All--</option>
+                            <option>Private</option>
+                            <option>Public</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary glyphicon glyphicon-refresh" ng-click="refresh()" bootstrap-tooltip="Refresh"></button>
+                    <button class="btn btn-info glyphicon glyphicon-compressed" ng-click="zip()" ng-class="{disabled: selectedCount < 2}" bootstrap-tooltip="Zip Download"></button>
+                    <button class="btn btn-danger glyphicon glyphicon-trash" ng-click="delAll()" ng-class="{disabled: selectedCount === 0}" bootstrap-tooltip="Delete Selected"></button>
+                </form>
+                <table class="table table-hover" id="static-resources">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" ng-model="isSelectAll" ng-change="selectAll()" /></th>
+                            <th>Name</th>
+                            <th>Namespace Prefix</th>
+                            <th>Description</th>
+                            <th>MIME Type</th>
+                            <th>Image</th>
+                            <th>Size</th>
+                            <th>Cache Control</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tfoot>
+                        <tr>
+                            <td colspan="9">
+                                <div class="row">
+                                    <div class="col-xs-2 col-sm-2 text-left">
+                                        <select ng-model="pagination.perPage" ng-change="changePrePage()">
+                                            <option>20</option>
+                                            <option>50</option>
+                                            <option>100</option>
+                                        </select>
+                                        Records/Page
+                                    </div>
+                                    <div class="col-xs-8 col-sm-8 text-center">
+                                        <ul class="pagination">
+                                            <li ng-class="{disabled: pagination.isFirstPage()}" ng-click="pagination.firstPage()"><a href="">«</a></li>
+                                            <li ng-class="{disabled: pagination.isFirstPage()}" ng-click="pagination.prevPage()"><a href="">‹</a></li>
+                                            <li ng-show="pagination.beforeEllipsis"><a href="">...</a></li>
+                                            <li ng-repeat="n in [] | range: pagination" ng-class="{active: pagination.page === n}">
+                                                <a href="" ng-click="pagination.toPageId(n)">{{n + 1}}</a>
+                                            </li>
+                                            <li ng-show="pagination.afterEllipsis"><a href="">...</a></li>
+                                            <li ng-class="{disabled: pagination.isLastPage()}" ng-click="pagination.nextPage()"><a href="">›</a></li>
+                                            <li ng-class="{disabled: pagination.isLastPage()}" ng-click="pagination.lastPage()"><a href="">»</a></li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-xs-2 col-sm-2 text-right">
+                                        Page {{pagination.page + 1}} of {{pagination.numPages}}
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </tfoot>
+                    <tbody>
+                        <tr class="droparea" ng-repeat-start="record in records | startFrom: pagination.startFrom() | limitTo: pagination.perPage" ng-controller="EditStaticResource">
+                            <td rowspan="{{ !!record.error ? 2 : 1}}">
+                                <input type="checkbox" ng-model="record.selected" ng-change="changeSelected(record)" />
+                            </td>
+
+                            <td ng-if="!record.editing">{{record.name}}</td>
+                            <td ng-if="record.editing" ng-class="{warning: record.name !== record.newName}">
+                                <input ng-model="record.newName" />
+                            </td>
+
+                            <td>{{record.namespacePrefix}}</td>
+
+                            <td ng-if="!record.editing">{{record.description}}</td>
+                            <td ng-if="record.editing" ng-class="{warning: record.description !== record.newDescription}">
+                                <textarea ng-model="record.newDescription"></textarea>
+                            </td>
+
+                            <td ng-if="!record.editing">{{record.contentType}}</td>
+                            <td ng-if="record.editing" ng-class="{warning: record.contentType !== record.newType}">
+                                {{record.newType}}
+                            </td>
+
+                            <td ng-if="!record.editing">
+                                <img class="thumbnail" ng-src="{{record.url}}?_={{record.lastModifiedDate - 0}}" ng-alt="{{record.name}}" ng-if="!!record.contentType.match('^image/')" />
+                            </td>
+                            <td ng-if="record.editing" ng-class="{warning: !!record.newFile}">
+                                <img class="thumbnail" ng-src="{{record.newImg}}" ng-alt="{{record.newName}}" ng-if="!!record.newImg" />
+                            </td>
+
+                            <td ng-if="!record.editing">
+                                {{record.bodyLength / 1000 | number:1}}KB
+                            </td>
+                            <td ng-if="record.editing" ng-class="{warning: record.bodyLength !== record.newSize}">
+                                {{record.newSize / 1000 | number:1}}KB
+                            </td>
+
+                            <td ng-if="!record.editing">{{record.cacheControl}}</td>
+                            <td ng-if="record.editing" ng-class="{warning: record.cacheControl !== record.newCacheControl}">
+                                <select class="form-control" ng-model="record.newCacheControl">
+                                    <option>Private</option>
+                                    <option>Public</option>
+                                </select>
+                            </td>
+
+                            <td class="action">
+                                <div ng-if="!record.inprogress">
+                                    <a href="" ng-if="record.editing" ng-click="cancel(record)" bootstrap-tooltip="Cancel"><i class="glyphicon glyphicon-remove"></i></a>
+                                    <a href="" ng-if="!record.editing" ng-click="edit(record)" bootstrap-tooltip="Edit"><i class="glyphicon glyphicon-edit"></i></a>
+                                    <a href="" ng-if="!record.editing" ng-click="del(record)" bootstrap-tooltip="Remove"><i class="glyphicon glyphicon-floppy-remove"></i></a>
+                                    <a href="" ng-if="record.editing" ng-click="update()" bootstrap-tooltip="Save"><i class="glyphicon glyphicon-floppy-save"></i></a>
+                                    <a ng-href="{{record.url}}?_={{record.lastModifiedDate - 0}}" target="_blank" ng-if="!record.editing" bootstrap-tooltip="Download"><i class="glyphicon glyphicon-download"></i></a>
+                                    <a href="" ng-if="!record.editing && !!record.contentType.match('^text/')" bootstrap-tooltip="Open"><i class="glyphicon glyphicon-eye-open" ng-click="open(record)"></i></a>
+                                    <a href="" ng-if="!record.editing && !!record.contentType.match('^application/') && !!record.contentType.match('zip')" ng-click="unzip(record)" bootstrap-tooltip="Unzip"><i class="glyphicon glyphicon-compressed"></i></a>
+                                </div>
+                                <div class="progress" ng-if="!!record.inprogress">
+                                    <div class="progress-bar" role="progressbar" aria-valuenow="{{record.inprogress | number:0}}" aria-valuemin="0" aria-valuemax="100" style="width: {{record.inprogress}}%;">{{record.inprogress | number:1}}%</div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr ng-repeat-end="ng-repeat-end" ng-if="!!record.error">
+                            <td colspan="8" class="danger">{{record.error}}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="tab-pane"  ng-repeat="tab in tabs" id="{{tab.id}}">
+                <div ng-controller="TextEditor" ng-if="tab.type == 'edit'" ng-init="init()">
+                    <div class="row">
+                        <button type="button" class="btn btn-danger" ng-click="closeTab(tab)"><i class="glyphicon glyphicon-remove"></i></button>
+                        <button type="button" class="btn btn-default" ng-click="save()" ng-class="{disabled: !tab.isChanged}"><i class="glyphicon glyphicon-floppy-floppy-remove"></i>Save</button>
+                        <span>&nbsp;|&nbsp;</span>
+                        <label>Mode: </label>
+                        <select ng-model="mode" ng-change="changeMode()" ng-options="m as m.label for m in allModes"></select>
+                        <span>&nbsp;|&nbsp;</span>
+                        <label>Keybinding: </label>
+                        <select ng-model="keybinding" ng-change="changeKeybinding()" ng-options="k as k.label for k in allKeybindings"></select>
+                    </div>
+                    <div class="row" style="padding: 4px 8px 0 0">
+                        <div class="editor" ui-ace="{theme: 'monokai', onLoad: onLoad, onChange: onChange}" style="height: 600px" ng-model="tab.text" ng-show="tab.isReady"></div>
+                    </div>
+                </div>
+                <div ng-controller="UnzipView" ng-if="tab.type == 'unzip'" ng-init="init()">
+                    <div class="row">
+                        <button type="button" class="btn btn-danger" ng-click="closeTab(tab)"><i class="glyphicon glyphicon-remove"></i></button>
+                        <button type="button" class="btn btn-default" ng-click="expandAll()">Expand All</button>
+                        <button type="button" class="btn btn-default" ng-click="collapseAll()">Collapse All</button>
+                        <grid items="tab.record.tree">
+                            <column title="Name">
+                                {{item['$label']}}
+                            </column>
+                            <column title="Image">
+                                <img class="thumbnail" ng-src="{{item.url}}?_={{Date.now()}}" ng-alt="{{item['$label']}}" ng-if="item.image" />
+                            </column>
+                            <column title="Size">
+                                <span ng-if="!item['$dir']">{{item.size / 1000 | number:1}}KB</span>
+                                <span ng-if="!!item['$dir']">-</span>
+                            </column>
+                            <column title="Action">
+                                <a ng-href="{{item.url}}" target="_blank" ng-if="!!item.url" bootstrap-tooltip="Download"><i class="glyphicon glyphicon-download"></i></a>
+                            </column>
+                        </grid>
+                    </div>    
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        var __sfdcSessionId = '{!GETSESSIONID()}';
+    </script>
+    <script src="../../soap/ajax/31.0/connection.js"></script>
+    <script src="{!URLFOR($Resource.libs, 'jquery-2.1.1.min.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'lodash.min.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'less-1.7.5.min.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'angular/angular.min.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'bootstrap/js/bootstrap.min.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'ace/ace.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'ace/keybinding-emacs.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'ace/keybinding-vim.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'jszip.min.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'jquery-treegrid/js/jquery.treegrid.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'jquery-treegrid/js/jquery.treegrid.bootstrap3.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'jquery.imagesize.js')}"></script>
+    <script src="{!URLFOR($Resource.libs, 'FileSaver.min.js')}"></script>
+
+    <apex:composition template="StaticResourceControll" />
+    <apex:composition template="NgPaginationScript" />
+    <apex:composition template="NgAceUiScript" />
+    <apex:composition template="NgBootstrapUtilsScript" />
+    <apex:composition template="NgTreeScript" />
+    <apex:composition template="NgThumbnailScript" />
+
+    <script>
+        window.srmApp = angular.module('srmApp', ["ngPagination", "ngBootstrapUtils", "ngTreeGrid", "ngThumbnail", "ui.ace"]);
+    </script>
+    <apex:composition template="ApplicationScript" />
+    <apex:composition template="TextEditorScript" />
+    <apex:composition template="UnzipViewScript" />
+    <apex:composition template="NewStaticResourceScript" />
+    <apex:composition template="ViewStaticResourceScript" />
+    <apex:composition template="EditStaticResourceScript" />
+</apex:page>

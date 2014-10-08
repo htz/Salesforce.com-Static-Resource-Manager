@@ -1,0 +1,62 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    srmApp.controller("Application", ["$scope", "$element", function($scope, $element) {
+        $scope.tabs = [];
+
+        $scope.addEditTab = function(record) {
+            openTab({
+                record: record,
+                type: "edit",
+                text: "",
+                original: "",
+                isChanged: false,
+                isReady: false
+            });
+        };
+
+        $scope.addUnzipTab = function(record) {
+            openTab({
+                record: record,
+                type: "unzip"
+            });
+        };
+
+        var openTab = function(tab) {
+            for (var i = 0; i < $scope.tabs.length; i++) {
+                if ($scope.tabs[i].record.fullName === tab.record.fullName) {
+                    return;
+                }
+            }
+
+            var id = _. uniqueId("tab-");
+            $scope.tabs.push(_.extend({}, tab, {id: id}));
+            // move tab
+            setTimeout(function() {
+                $('.nav-tabs a[href="#' + id + '"]').tab("show");
+            }, 10);
+        };
+
+        $scope.closeTab = function(tab) {
+            for (var i = 0; i < $scope.tabs.length; i++) {
+                if ($scope.tabs[i].id === tab.id) {
+                    // focus next tab
+                    var nextTabId;
+                    if ($scope.tabs.length === 1) {
+                        nextTabId = "view"
+                    } else if (i < $scope.tabs.length - 1) {
+                        nextTabId = $scope.tabs[i +1].id;
+                    } else {
+                        nextTabId = $scope.tabs[i -1].id;
+                    }
+                    $('.nav-tabs a[href="#' + nextTabId + '"]').tab("show");
+                    $scope.tabs.splice(i, 1);
+                    return;
+                }
+            }
+        };
+
+    }]);
+})();
+</script>
+</apex:page>

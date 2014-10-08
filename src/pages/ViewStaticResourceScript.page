@@ -1,0 +1,298 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    srmApp.controller("ViewStaticResource", ["$scope", "$element", "$pagination",  function($scope, $element, $pagination) {
+        var StaticResource = new SObjectModel.StaticResource();
+        var StaticResourceFields = [
+            "Id", "bodyLength", "cacheControl", "contentType", "createdById", "createdDate", "description",
+            "lastModifiedById", "lastModifiedDate", "name", "namespacePrefix"
+        ];
+    
+        // init data
+        $scope.records = [];
+        $scope.prefixes = [];
+        $scope.name = "";
+        $scope.prefix = "";
+        $scope.type = "all";
+        $scope.cacheControl = "all";
+        $scope.selectedCount = 0;
+        $scope.isSelectAll = false;
+        $scope.pagination = $pagination.getNew(20, 10);
+
+        var refresh = function() {
+            var options = {
+                orderby: [{Name: "ASC"}],
+                where: {Id: {ne: ""}},
+                limit: 10000
+            };
+            if ($scope.name.length > 0) {
+                var name = $scope.name
+                    .replace(/'/g, "\\'")
+                    .replace(/%/g, "\\%")
+                    .replace(/_/g, "\\_");
+                options.where.name = {like: "%" + name + "%"};
+            }
+            if ($scope.prefix.length > 0) {
+                var prefix = $scope.prefix.replace(/'/g, "\\'");
+                options.where.namespacePrefix = {eq: prefix};
+            }
+            if ($scope.type.length > 0 && $scope.type !== "all") {
+                var type = $scope.type
+                    .replace(/'/g, "\\'")
+                    .replace(/%/g, "\\%")
+                    .replace(/_/g, "\\_");
+                options.where.contentType = {like: "%" + type + "%"};
+            }
+            if ($scope.cacheControl.length > 0 && $scope.cacheControl !== "all") {
+                var cacheControl = $scope.cacheControl.replace(/'/g, "\\'");
+                options.where.cacheControl = {eq: cacheControl};
+            }
+
+            StaticResource.retrieve(
+                options,
+                function(err, records) {
+                    if(!err) {
+                        $scope.records = [];
+                        $scope.records = records.map(function(record) {
+                            var obj = StaticResourceFields.reduce(function(obj, fieldName) {
+                                obj[fieldName] = record.get(fieldName);
+                                return obj;
+                            }, {record: record, editing: false});
+                            if (obj.namespacePrefix) {
+                                obj.fullName = obj.namespacePrefix + "__" + obj.name;
+                            } else {
+                                obj.fullName = obj.name;
+                            }
+                            obj.url = "/resource/1311880464000/" + obj.fullName;
+                            return obj;
+                        });
+                        $scope.$apply(function() {
+                            $scope.pagination.page = 0;
+                            $scope.pagination.numPages = Math.ceil($scope.records.length / $scope.pagination.perPage);
+                        });
+                    } else {
+                        alert(err);
+                    }
+                }
+            )
+        };
+        $scope.refresh = function() {
+            $scope.isSelectAll = false;
+            refresh();
+        };
+
+        var refreshPrefixes = function() {
+            var soql = 'Select NamespacePrefix From StaticResource Group By NamespacePrefix Order By NamespacePrefix';
+            sforce.connection.query(soql, {
+                onSuccess: function(res) {
+                    var prefixes = res.records.map(function(record) {
+                        return record.NamespacePrefix || "";
+                    });
+                    if (prefixes[0] !== "") {
+                        prefixes.unshift("");
+                    }
+                    $scope.prefixes = prefixes
+                },
+                onFailure: function(err) {
+                    alert(err);
+                }
+            });
+        };
+
+        $scope.changeSelected = function(record) {
+            $scope.selectedCount = 0;
+            for(var i = 0; i < $scope.records.length; i++) {
+                var record = $scope.records[i];
+                if (record.selected) {
+                    $scope.selectedCount++;
+                }
+            }
+            if ($scope.selectedCount === 0) {
+                $scope.isSelectAll = false;
+            }
+        };
+
+        $scope.selectAll = function() {
+            if ($scope.records.length > 0) {
+                $scope.records.forEach(function(record) {
+                    record.selected = $scope.isSelectAll;
+                });
+                $scope.selectedCount = $scope.isSelectAll ? $scope.records.length : 0;
+            } else {
+                $scope.isSelectAll = false;
+                $scope.selectedCount = 0;
+            }
+        };
+
+        var selectedIds = function() {
+            return $scope.records.reduce(function(ids, record) {
+                if (record.selected) ids.push(record.Id);
+                return ids;
+            }, []);
+        };
+
+        var selectedNames = function() {
+            return $scope.records.reduce(function(names, record) {
+                if (record.selected) names.push(record.fullName);
+                return names;
+            }, []);
+        };
+
+        var mimeTypeMap = {
+            "text/plain" : "txt",
+            "text/html" : "html",
+            "application/xhtml+xml" : "xhtml",
+            "text/xml" : "xml",
+            "application/xml" : "xml",
+            "application/rss+xml" : "rss",
+            "text/css" : "css",
+            "text/javascript" : "js",
+            "application/javascript" : "js",
+            "application/x-javascript" : "js",
+            "application/json" : "json",
+            "application/zip" : "zip",
+            "application/x-zip-compressed" : "zip",
+            "application/x-shockwave-flash" : "swf",
+            "image/gif" : "gif",
+            "image/jpeg" : "jpg",
+            "image/png" : "png",
+            "image/vnd.microsoft.icon" : "ico",
+            "image/bmp": "bmp",
+            "image/tiff": "tif",
+            "video/mpeg" : "mpg",
+            "video/mp4" : "mp4",
+            "application/pdf" : "pdf"
+        };
+        var fileExtension = function(mime) {
+            for (var m in mimeTypeMap) {
+                if (mime.indexOf(m) == 0) {
+                    return "." + mimeTypeMap[m];
+                }
+            }
+            return '';
+        };
+        $scope.zip = function() {
+            var names = selectedNames();
+            var deferreds = [];
+            for (var i = 0; i <= (names.length - 1) / 10; i++) {
+                var tmp = names.slice(i * 10, i * 10 + 10);
+                deferreds.push(MetadataApi.readStaticResource(tmp));
+            }
+            $.when.apply($, deferreds)
+            .done(function() {
+                var responses = arguments;
+                if (responses.length === 0) return;
+                var zip = new JSZip();
+               _.each(responses, function(res) {
+                    if (res.length === 0) return;
+                    var records = res[0].records;
+                    records.forEach(function(record) {
+                        var fname = record.fullName + fileExtension(record.contentType);
+                        zip.file(fname, record.content, {base64: true});
+                    });
+                });
+                var blob = zip.generate({type: "blob"});
+                saveAs(blob, "download.zip");
+            })
+            .fail(function(err) {
+                var faultstring = $(err.responseXML).find("faultstring").text();
+                alert(faultstring);
+            });
+        };
+
+        var del = function(ids) {
+            var d = new $.Deferred();
+            StaticResource.del(ids, function(err, ids) {
+                if (!err) {
+                    $scope.$apply(function() {
+                        ids.forEach(function(id) {
+                            for (var i = 0; i < $scope.records.length; i++) {
+                                var record = $scope.records[i];
+                                if (record.Id === id) {
+                                    $scope.records.splice(i, 1);
+                                    break;
+                                }
+                            }
+                        });
+                    });
+                    d.resolve(ids);
+                } else {
+                    d.reject(err);
+                }
+            });
+            return d.promise();
+        }
+
+        $scope.del = function(record) {
+            if (confirm("Are you sure?")) {
+                del(record.Id)
+                .done(function() {
+                    $scope.changeSelected();
+                })
+                .fail(function(err) {
+                    $scope.$apply(function() {
+                        record.error = err.message;
+                    });
+                });
+            }
+        };
+
+        $scope.delAll = function() {
+            var ids = selectedIds();
+            if (confirm("Are you sure?")) {
+                del(ids).done(function() {
+                    $scope.$apply(function() {
+                        $scope.isSelectAll = false;
+                        $scope.selectedCount = 0;
+                    });
+                })
+                .fail(function(err) {
+                    alert(err.message);
+                });
+            }
+        };
+
+        $scope.changePrePage = function() {
+            $scope.pagination.numPages = Math.ceil($scope.records.length / $scope.pagination.perPage);
+        };
+
+        $scope.edit = function(record) {
+            record.editing = true;
+            record.error = null;
+            record.newName = record.name;
+            record.newDescription = record.description;
+            record.newType = record.contentType;
+            record.newFile = null;
+            if (record.contentType.match('^image/')) {
+                if (record.namespacePrefix) {
+                    record.fullName = record.namespacePrefix + "__" + record.name;
+                } else {
+                    record.fullName = record.name;
+                }
+                record.newImg = "/resource/1311880464000/" + record.fullName;
+            } else {
+                record.newImg = null;
+            }
+            record.newSize = record.bodyLength;
+            record.newCacheControl = record.cacheControl;
+        };
+
+        $scope.cancel = function(record) {
+            record.editing = false;
+            record.error = null;
+        };
+
+        $scope.open = function(record) {
+            $scope.addEditTab(record);
+        };
+
+        $scope.unzip = function(record) {
+            $scope.addUnzipTab(record);
+        };
+
+        refresh();
+        refreshPrefixes();
+    }]);
+})();
+</script>
+</apex:page>

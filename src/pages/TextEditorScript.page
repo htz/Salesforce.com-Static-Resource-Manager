@@ -1,0 +1,102 @@
+<apex:page showHeader="false">
+<script>
+(function() {
+    srmApp.controller("TextEditor", ["$scope", "$element", function($scope, $element) {
+        var editor;
+
+        $scope.allModes = [
+            {label: "CSS", value: "css", types: ["text/css"]},
+            {label: "HTML", value: "html", types: ["text/html"]},
+            {label: "JavaScript", value: "javascript", types: ["text/javascript", "application/javascript", "application/x-javascript"]},
+            {label: "JSON", value: "json", types: ["application/json"]},
+            {label: "Less", value: "less", types: ["text/css"]},
+            {label: "Text", value: "text", types: ["text/plain"]},
+            {label: "XML", value: "xml", types: ["text/xml", "application/xml"]}
+        ];
+        $scope.mode = $scope.allModes[0];
+
+        $scope.allKeybindings = [
+            {label: "Ace", handler: null},
+            {label: "Vim", handler: ace.require("ace/keyboard/vim").handler},
+            {label: "Emacs", handler: ace.require("ace/keyboard/emacs").handler}
+        ];
+        $scope.keybinding = $scope.allKeybindings[0];
+
+        $scope.init = function() {
+            var record = $scope.tab.record;
+
+            $.ajax({url: record.url, dataType: "text", cache : false})
+            .done(function(res) {
+                $scope.$apply(function() {
+                    $scope.tab.text = res;
+                    $scope.tab.original = res;
+                    $scope.tab.isReady = true;
+                });
+            });
+        };
+
+        $scope.closeTab = function(tab) {
+            if ($scope.tab.isChanged && !confirm("Your changes will be discarded.")) {
+                return;
+            }
+            $scope.$parent.closeTab(tab);
+        };
+
+        $scope.onLoad = function(_editor) {
+            editor = _editor;
+            // auto mode select
+            var type = $scope.tab.record.contentType;
+            var mode = null;
+            for (var i = 0; i < $scope.allModes.length && !mode; i++) {
+                var m = $scope.allModes[i];
+                for (var j = 0; j < m.types.length; j++) {
+                    if (type.indexOf(m.types[j]) == 0) {
+                        mode = m;
+                        break;
+                    }
+                }
+            }
+            $scope.mode = mode || $scope.allModes[0];
+            $scope.changeMode();
+            $scope.changeKeybinding();
+        };
+
+        $scope.onChange = function() {
+            $scope.tab.isChanged = $scope.tab.text !== $scope.tab.original;
+        };
+
+        $scope.save = function() {
+            var record = $scope.tab.record;
+            var staticResource = {
+                fullName: record.name,
+                content: btoa(unescape(encodeURIComponent($scope.tab.text))),
+                cacheControl: record.cacheControl,
+                contentType: record.contentType,
+                description: record.description || ""
+            };
+            MetadataApi.updateStaticResource([staticResource])
+            .done(function(res) {
+                if (res[0].success === "true") {
+                    $scope.$apply(function() {
+                        $scope.tab.original = $scope.tab.text;
+                        $scope.tab.isChanged = false;
+                    });
+                } else {
+                    alert(res[0].message);
+                }
+            }).fail(function(err) {
+                alert(err);
+            });
+        };
+
+        $scope.changeMode = function() {
+            editor.setOption('mode', 'ace/mode/' + $scope.mode.value);
+        };
+
+        $scope.changeKeybinding = function() {
+            editor.setKeyboardHandler($scope.keybinding.handler); 
+        };
+    }]);
+})();
+</script>
+</apex:page>

@@ -1,0 +1,242 @@
+<apex:page showHeader="false">
+<script>
+(function(exports) {
+    var XMLGenerator = function(data) {
+        this.data = data;
+    };
+    XMLGenerator.prototype.toString = function(rootname, xmlns) {
+        if (!_.isObject(this.data)) {
+            throw "XMLGenerator#toString data type error.";
+        }
+        var genetateTag = function(node, name, xmlns, xmlnsTable, callback) {
+            if (_.isObject(node)) {
+                var attrKeys = _.filter(_.keys(node), function(k) {
+                    return k[0] == '@' && k[1] != '@';
+                });
+                var attrs = _.map(attrKeys, function(key) {
+                    return _.escape(key.substr(1)) + '="' + _.escape(node[key]) + '"';
+                });
+                xmlnsTable = _.clone(xmlnsTable);
+                var childNodes = _.reduce(node, function(nodes, node, name) {
+                    if (name[0] != "@") {
+                        nodes[name] = node;
+                    } else if (name === "@xmlns") {
+                        xmlnsTable[node] = null;
+                        xmlns = node;
+                    } else if (name.indexOf("@xmlns:") === 0) {
+                        xmlnsTable[node] = name.substr(7);
+                    } else if (name == '@@ns') {
+                        xmlns = node;
+                    }
+                    return nodes;
+                }, {});
+            }
+            var ns = xmlnsTable[xmlns];
+            var tagName = _.escape(name);
+            if (ns) tagName = _.escape(ns) + ":" + tagName;
+            return "<" + tagName + (attrs && attrs.length > 0 ? " " + attrs.join(" ") : "") + ">" +
+                (_.isFunction(callback) ? callback(childNodes, xmlns, xmlnsTable) : node) +
+                "</" + tagName + ">";
+        };
+        var toString = function(node, name, xmlns, xmlnsTable) {
+            if (_.isUndefined(xmlnsTable)) {
+                xmlnsTable = {};
+            }
+            if (_.isArray(node)) {
+                return _.map(node, function(val) {
+                    return toString(val, name, xmlns, xmlnsTable);
+                }).join("");
+            } else if (_.isObject(node) && !_.isFunction(node)) {
+                return genetateTag(node, name, xmlns, xmlnsTable, function(node, xmlns, xmlnsTable) {
+                    return _.map(node, function(val, key, xmlnsTable) {
+                        return toString(val, key, xmlns, xmlnsTable);
+                    }).join("");
+                });
+            } else if (_.isFunction(node)) {
+                return genetateTag(null, name, xmlns, xmlnsTable, node);
+            } else {
+                return genetateTag(node, name, xmlns, xmlnsTable);
+            }
+        };
+        return toString(this.data, rootname, xmlns);
+    };
+
+    var MetadataApi = {};
+
+    var metadataApiRequest = function(body) {
+        var xml = generateSoapXml(body);
+        var d = new $.Deferred();
+        $.ajax({
+            type: "POST",
+            url: "/services/Soap/m/31.0/{!$Organization.Id}",
+            data: xml,
+            cache: false,
+            xhr : function() {
+                var xhr = $.ajaxSettings.xhr();
+                if (xhr.upload) {
+                    xhr.upload.addEventListener('progress', function(e) {
+                        d.notify(e);
+                    });
+                }
+                return xhr;
+            },
+            beforeSend: function(xhr) {
+                xhr.setRequestHeader("Content-Type", "text/xml");
+                xhr.setRequestHeader("SOAPAction", '""');
+            }
+        }).done(function(res) {
+            var traceNode = function(node) {
+                var val = {};
+                $(node).find("> *").each(function() {
+                    if (this.children.length > 0) {
+                        var v = traceNode(this);
+                    } else {
+                        var v= this.textContent;
+                    }
+                    if (_.isUndefined(val[this.nodeName])) {
+                        val[this.nodeName] = v;
+                    } else {
+                        if (!_.isArray(val[this.nodeName])) {
+                            val[this.nodeName] = [val[this.nodeName]];
+                        }
+                        val[this.nodeName].push(v);
+                    }
+                });
+                return val;
+            };
+            var r = $("result", res).map(function() {
+                return traceNode(this);
+            }).toArray();
+            d.resolve(r)
+        }).fail(function(e) {
+            d.reject(e);
+        });
+        return d.promise();
+    };
+    
+    var generateSoapXml = function (body) {
+        var xmlData = {
+            "@xmlns": "http://schemas.xmlsoap.org/soap/envelope/",
+            "@xmlns:xsd": "http://www.w3.org/2001/XMLSchema",
+            "@xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+            "@xmlns:sobj": "null",
+            Header: {
+                SessionHeader: {
+                    "@xmlns": "http://soap.sforce.com/2006/04/metadata",
+                    sessionId: "{!GETSESSIONID()}"
+                }
+            },
+            Body: function() {
+                return body;
+            }
+        };
+        return new XMLGenerator(xmlData).toString("Envelope");
+    };
+    
+    var generateReadStaticResourceXml = function(datas) {
+        if (!_.isArray(datas)) datas = [datas];
+        var xmlData = {
+            "@@ns": "http://soap.sforce.com/2006/04/metadata",
+            "@xmlns:m": "http://soap.sforce.com/2006/04/metadata",
+            type: "StaticResource",
+            fullNames: datas,
+        };
+        return new XMLGenerator(xmlData).toString("readMetadata");
+    };
+    MetadataApi.readStaticResource = function(data) {
+        var body = generateReadStaticResourceXml(data);
+        return metadataApiRequest(body);
+    };
+    
+    var generateCreateStaticResourceXml = function(datas) {
+        if (!_.isArray(datas)) datas = [datas];
+        return _.map(datas, function(data) {
+            var xmlData = {
+                "@@ns": "http://soap.sforce.com/2006/04/metadata",
+                "@xmlns:m": "http://soap.sforce.com/2006/04/metadata",
+                metadata: {
+                    "@xsi:type": "m:StaticResource",
+                    fullName: data.fullName,
+                    content: data.content,
+                    cacheControl: data.cacheControl,
+                    contentType: data.contentType,
+                    description: data.description
+                }
+            };
+            return new XMLGenerator(xmlData).toString("createMetadata");
+        }).join("");
+    };
+    MetadataApi.createStaticResource = function(data) {
+        var body = generateCreateStaticResourceXml(data);
+        return metadataApiRequest(body);
+    };
+    
+    var generateUpdateStaticResourceXml = function(datas) {
+        if (!_.isArray(datas)) datas = [datas];
+        return _.map(datas, function(data) {
+            var xmlData = {
+                "@@ns": "http://soap.sforce.com/2006/04/metadata",
+                "@xmlns:m": "http://soap.sforce.com/2006/04/metadata",
+                metadata: {
+                    "@xsi:type": "m:StaticResource",
+                    fullName: data.fullName
+                }
+            };
+            if (data.content) {
+                xmlData.metadata.content = data.content;
+                if (data.contentType) {
+                    xmlData.metadata.contentType = data.contentType;
+                }
+            }
+            if (data.cacheControl) {
+                xmlData.metadata.cacheControl = data.cacheControl;
+            }
+            if (data.description) {
+                xmlData.metadata.description = data.description;
+            }
+            return new XMLGenerator(xmlData).toString("updateMetadata");
+        }).join("");
+    };
+    MetadataApi.updateStaticResource = function(data) {
+        var body = generateUpdateStaticResourceXml(data);
+        return metadataApiRequest(body);
+    };
+    
+    var generateDeleteStaticResourceXml = function(datas) {
+        if (!_.isArray(datas)) datas = [datas];
+        var xmlData = {
+            "@@ns": "http://soap.sforce.com/2006/04/metadata",
+            "@xmlns:m": "http://soap.sforce.com/2006/04/metadata",
+            type: "StaticResource",
+            fullNames: datas
+        };
+        return new XMLGenerator(xmlData).toString("deleteMetadata");
+    };
+    MetadataApi.deleteStaticResource = function(datas) {
+        var body = generateDeleteStaticResourceXml(datas);
+        return metadataApiRequest(body);
+    };
+    
+    var generateRenameStaticResourceXml = function(datas) {
+        if (!_.isArray(datas)) datas = [datas];
+        return _.map(datas, function(data) {
+            var xmlData = {
+                "@@ns": "http://soap.sforce.com/2006/04/metadata",
+                "@xmlns:m": "http://soap.sforce.com/2006/04/metadata",
+                type: "StaticResource",
+                oldFullName: data.oldFullName,
+                newFullName: data.newFullName
+            };
+            return new XMLGenerator(xmlData).toString("renameMetadata");
+        }).join("");
+    }
+    MetadataApi.renameStaticResource = function(datas) {
+        var body = generateRenameStaticResourceXml(datas);
+        return metadataApiRequest(body);
+    };
+
+    exports.XMLGenerator = XMLGenerator;
+    exports.MetadataApi = MetadataApi;
+})(window);
+</script>
+</apex:page>
